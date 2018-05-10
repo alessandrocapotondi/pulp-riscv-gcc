@@ -59,6 +59,17 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-pretty-print.h"
 #include "hsa-common.h"
 
+/* Modifications for PULP infrastructure */
+#define PULP_NEEDS_RAB_INSTRUMENTATION_FLAG(NODE)	(TYPE_TO_INSTRUMENT(NODE))
+#define PULP_NEEDS_RAB_INSTRUMENTATION_P(NODE)		(TYPE_TO_INSTRUMENT(NODE) == 1)
+#define PULP_SET_NEEDS_RAB_INSTRUMENTATION(NODE)	(TYPE_TO_INSTRUMENT(NODE) = 1)
+
+#define PULP_NEEDS_RAB_INSTRUMENTATION_STMT(NODE)	gimple_needs_rab_instrumentation_stmt(NODE)
+#define PULP_SET_NEEDS_RAB_INSTRUMENTATION_STMT(NODE)	gimple_set_needs_rab_instrumentation_stmt(NODE,1)
+#define PULP_SET_MARKED_BY_SSA_RAB_PASS_STMT(NODE,FLAG)	gimple_set_marked_by_ssa_rab_pass_stmt(NODE,FLAG)
+
+/* Modifications for PULP infrastructure */
+
 /* Lowering of OMP parallel and workshare constructs proceeds in two
    phases.  The first phase scans the function looking for OMP statements
    and then for variables that must be replaced to satisfy data sharing
@@ -133,6 +144,9 @@ static int taskreg_nesting_level;
 static int target_nesting_level;
 static bitmap task_shared_vars;
 static vec<omp_context *> taskreg_contexts;
+/* Modifications for PULP infrastructure */
+bool instrument_every_occurrence;
+/* Modifications for PULP infrastructure */
 
 static void scan_omp (gimple_seq *, omp_context *);
 static tree scan_omp_1_op (tree *, int *, void *);
@@ -146,6 +160,109 @@ static tree scan_omp_1_op (tree *, int *, void *);
       /* The sub-statements for these should be walked.  */ \
       *handled_ops_p = false; \
       break;
+
+
+/* Modifications for PULP infrastructure */
+
+/* Called via walk_tree. */
+
+static tree
+find_ref_in_expr (tree *tp, int *walk_subtrees, void *data)
+{
+//   struct walk_stmt_info *wi = (struct walk_stmt_info *) data;
+//   tree *ssa_var = (tree *) wi->info;
+
+  if (PULP_NEEDS_RAB_INSTRUMENTATION_P (*tp))
+  {
+    walk_subtrees = 0;
+    
+    return *tp;
+  }
+
+  return NULL_TREE;
+}
+
+
+/* If EXPR (a RH)S contains an expr that is marked for instrumentation, returns it. 
+ * Es.
+ * 
+ * lhs = &num1 + 32;
+ * 
+ * where NUM1 has both DECL_HAS_VALUE_EXPR_P and PULP_NEEDS_RAB_INSTRUMENTATION_P
+ * flags set.
+ * However, during gimplification (around line 12150) we can't recognize this and 
+ * we need to pass NUM1 only.
+ */
+static tree
+expr_contains_instrumented_ref (tree expr)
+{
+  struct walk_stmt_info wi;
+//   memset (&wi, 0, sizeof (wi));
+//   wi.info = &ssa_ref;
+
+  return (walk_tree (&expr, find_ref_in_expr, &wi, NULL));
+}      
+      
+      
+/* Walk statements in a GIMPLE_SEQ and mark for RAB instrumentation
+ * those which accesses to OMP_DATA_I metadata where previously
+ * marked as candidates for instrumentation.
+ */
+static void
+pulp_mark_stmts_for_instrumentation (gimple_stmt_iterator *gsi_p, tree var)
+{
+  gimple_stmt_iterator gsi = *gsi_p;
+  
+  if (!PULP_NEEDS_RAB_INSTRUMENTATION_P (var))
+    return;
+  
+  for (gsi = *gsi_p; gsi.ptr != NULL; gsi_prev (&gsi))
+  {
+    tree rhs, mref, pdecl;
+    gimple stmt = gsi_stmt (gsi);
+    
+    if (gimple_code (stmt) != GIMPLE_ASSIGN)
+      continue;
+    
+    /* This should be *omp_data_i->var - A COMPONENT_REF */
+    rhs = gimple_op (stmt, 1);
+    if (TREE_CODE (rhs) != COMPONENT_REF)
+      continue;
+
+    /* This should be *omp_data_i - A MEM_REF */
+    mref = TREE_OPERAND (rhs, 0);
+    if (TREE_CODE (mref) != MEM_REF)
+      continue;
+
+    /* This should be omp_data_i - A PARM_DECL */
+    pdecl = TREE_OPERAND (mref, 0);
+    if (TREE_CODE (pdecl) != PARM_DECL)
+      continue;
+    
+    /* Last check. Our PARM_DECL should be artificial */
+    if (!DECL_ARTIFICIAL (pdecl))
+      continue;
+    
+    /* We found what we were looking for. Mark the statement for instrumentation */
+    PULP_SET_NEEDS_RAB_INSTRUMENTATION_STMT (stmt);
+
+#if 0
+    /* Statements marked for instrumentation from the OpenMP expansion pass (this one)
+     * should not need their RHSs to be instrumented, as the host pointers stored in the
+     * omp_data_i metadata should have been copied to a local memory to the accelerator
+     * (i.e., we are not accessing the original copy of omp_data_i stored in (host) main memory).
+     * We need to inform the SSA RAB pass about that (tree-ssa-pulp-rab.c)
+     */
+    /* NOTE: gimple(stmt)->plf doesn't carry across the passes correctly.
+     * We need to postpone setting this flag to tree-ssa-pulp-rab.c
+     */
+    PULP_SET_MARKED_BY_SSA_RAB_PASS_STMT (stmt, false);
+#endif
+    /* Stop at first recurrence */
+    break;
+  }
+}
+/* Modifications for PULP infrastructure */
 
 /* Return true if CTX corresponds to an oacc parallel region.  */
 
@@ -687,6 +804,41 @@ install_var_field (tree var, bool by_ref, int mask, omp_context *ctx,
   field = build_decl (DECL_SOURCE_LOCATION (var),
 		      FIELD_DECL, DECL_NAME (var), type);
 
+/* Modifications for PULP infrastructure */
+  /* If this FIELD_DECL comes from a MAP clause associated to a OMP TARGET directive
+   * we mark it for instrumentation straight away. However we also need to check that
+   * data that has been passed through nested PARALLEL regions (or TASK, or other) gets
+   * marked for instrumentation.
+   */
+  if (flag_pulp_rab)
+  {
+    /* If we're in a nested context we must check if the VAR was marked for 
+     * instrumentation in the outer (enclosing) PARALLEL or TARGET context.
+     * Note that we might have a PARALLEL nested inside a SECTIONS or a FOR construct, so we
+     * need to make sure that the outer context where we look for the FIELD_DECL is not 
+     * the one immediately enclosing the current one (i.e., the SECTIONS or the FOR).
+     */
+    if (gimple_code (ctx->stmt) == GIMPLE_OMP_TARGET)
+      PULP_SET_NEEDS_RAB_INSTRUMENTATION (field);
+    else
+    {
+      omp_context *outer = ctx->outer;
+      tree lfield;
+      
+      // Reach the enclosing PARALLEL or TARGET context
+      while (outer && gimple_code (outer->stmt) != GIMPLE_OMP_PARALLEL
+		   && gimple_code (outer->stmt) != GIMPLE_OMP_TARGET)
+	outer = outer->outer;
+      
+      lfield = (outer && outer->field_map) ? maybe_lookup_field (var, outer) : NULL_TREE;
+      
+      if (lfield)
+	if (PULP_NEEDS_RAB_INSTRUMENTATION_P (lfield))
+	  PULP_SET_NEEDS_RAB_INSTRUMENTATION (field);
+    }
+  }
+/* Modifications for PULP infrastructure */
+  
   /* Remember what variable this field was created for.  This does have a
      side effect of making dwarf2out ignore this member, so for helpful
      debugging we clear it later in delete_omp_context.  */
@@ -4121,6 +4273,18 @@ lower_rec_input_clauses (tree clauses, gimple_seq *ilist, gimple_seq *dlist,
 		 that we get the correct type during the dereference.  */
 	      by_ref = use_pointer_for_field (var, ctx);
 	      x = build_receiver_ref (var, by_ref, ctx);
+	      
+/* Modifications for PULP infrastructure */
+	      /* If the FIELD_DECL associated to this variable was marked for RAB instrumentation
+	      * at the sender side we should propagate this info to the receiver.
+	      */
+	      if (flag_pulp_rab)
+		if (PULP_NEEDS_RAB_INSTRUMENTATION_P (maybe_lookup_field (var, ctx)))
+		  PULP_SET_NEEDS_RAB_INSTRUMENTATION (new_var);
+/*	      else
+		PULP_NEEDS_RAB_INSTRUMENTATION (new_var) = 0*/;
+/* Modifications for PULP infrastructure */
+	      
 	      SET_DECL_VALUE_EXPR (new_var, x);
 	      DECL_HAS_VALUE_EXPR_P (new_var) = 1;
 
@@ -5579,6 +5743,10 @@ lower_send_shared_vars (gimple_seq *ilist, gimple_seq *olist, omp_context *ctx)
 	 mapping for OVAR.  */
       var = lookup_decl_in_outer_ctx (ovar, ctx);
 
+      /* Modifications for PULP infrastructure */
+      tree rhs = var;
+      /* Modifications for PULP infrastructure */
+
       t = omp_member_access_dummy_var (var);
       if (t)
 	{
@@ -5614,6 +5782,30 @@ lower_send_shared_vars (gimple_seq *ilist, gimple_seq *olist, omp_context *ctx)
 	      gimplify_assign (var, x, olist);
 	    }
 	}
+	
+/* Modifications for PULP infrastructure */
+      /* At this point a statement has been created (for inclusion in the
+       * ILIST) that implements copying the pointer to the shared data from the
+       * outer context into a copy local to this context.
+       * This statement needs to be marked for RAB instrumentation, however it
+       * has been gimplified, which most likely has split the original assignment
+       * 
+       * omp_data_o.VAR = &VAR (VAR has DECL_HAS_VALUE_EXPR_P set to 1)
+       * 
+       * into several statements like the following:
+       * 
+       * D1234 = &omp_data_i->VAR;
+       * ...
+       * omp_data_o.VAR = D1234;
+       * 
+       * We only need to instrument the statement that reads into omp_data_i
+       */
+      if (flag_pulp_rab)
+      {
+	gimple_stmt_iterator gsi = gsi_last (*ilist);
+	pulp_mark_stmts_for_instrumentation (&gsi, rhs);
+      }
+/* Modifications for PULP infrastructure */
     }
 }
 
@@ -7670,6 +7862,16 @@ lower_omp_target (gimple_stmt_iterator *gsi_p, omp_context *ctx)
 	      }
 	    else if (DECL_P (new_var))
 	      {
+/* Modifications for PULP infrastructure */
+	    /* If the FIELD_DECL associated to this variable was marked for RAB instrumentation
+	     * at the sender side we should propagate this info to the receiver.
+	     */
+	    if (flag_pulp_rab)
+	      if (PULP_NEEDS_RAB_INSTRUMENTATION_P (maybe_lookup_field (var, ctx)))
+		PULP_SET_NEEDS_RAB_INSTRUMENTATION (new_var);
+// 	    else
+// 	      PULP_NEEDS_RAB_INSTRUMENTATION (new_var) = 0;
+/* Modifications for PULP infrastructure */
 		SET_DECL_VALUE_EXPR (new_var, x);
 		DECL_HAS_VALUE_EXPR_P (new_var) = 1;
 	      }
@@ -8906,7 +9108,41 @@ lower_omp_1 (gimple_stmt_iterator *gsi_p, omp_context *ctx)
 	      gsi_replace (gsi_p, gimple_build_nop (), true);
 	      break;
 	    }
-	  lower_omp_regimplify_operands (ctx, stmt, gsi_p);
+	    
+/* Modifications for PULP infrastructure */
+	  tree ref = NULL_TREE;
+	  if (flag_pulp_rab)
+	  {
+	    // NOTE: OLD VERSION. Assumes the expression marked for
+	    // instrumentation always resides on the rhs of an assignment.
+// 	    tree rhs = gimple_op (stmt, 1);
+// 	    ref = expr_contains_instrumented_ref (rhs);
+	    
+	    // ARRAY_REFs are legal also on the lhs of a GIMPLE_ASSIGN.
+	    // Need to handle statements with expressions reading into
+	    // omp_data_i on the lhs, too.
+	    // NOTE: Here I am using GIMPLE_ASSIGN_* without
+	    // checking that the stmt is indeed a GIMPLE_ASSIGN.
+	    // Is it always safe?
+	    tree lhs = gimple_assign_lhs (stmt);
+	    tree rhs = gimple_assign_rhs1 (stmt);
+
+	    tree lref = expr_contains_instrumented_ref (lhs);
+	    tree rref = expr_contains_instrumented_ref (rhs);
+	    
+	    if ((lref == NULL_TREE) && (rref == NULL_TREE))
+	      ref = rhs;
+	    else
+	      ref = (lref == NULL_TREE) ? rref : lref;
+	  }
+/* Modifications for PULP infrastructure */
+	    
+	  gimple_regimplify_operands (stmt, gsi_p);
+	  
+/* Modifications for PULP infrastructure */
+	  if (flag_pulp_rab)
+	    pulp_mark_stmts_for_instrumentation (gsi_p, ref);
+/* Modifications for PULP infrastructure */
 	}
       break;
     }

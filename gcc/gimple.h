@@ -2158,6 +2158,43 @@ gimple_set_has_volatile_ops (gimple *stmt, bool volatilep)
     stmt->has_volatile_ops = (unsigned) volatilep;
 }
 
+
+/* Modifications for PULP infrastructure */
+
+/* Return true if statement STMT is marked for RAB instrumentation.  */
+
+static inline bool
+gimple_needs_rab_instrumentation_stmt (const_gimple stmt)
+{
+  return stmt->pad;
+}
+
+
+/* Set the flag for RAB instrumentation to MARKP.  */
+
+static inline void
+gimple_set_needs_rab_instrumentation_stmt (gimple stmt, bool markp)
+{
+  stmt->pad = (unsigned) markp;
+}
+
+static inline bool
+gimple_marked_by_ssa_rab_pass_stmt (const_gimple stmt)
+{
+  return stmt->plf;
+}
+
+
+/* Set the flag for RAB instrumentation to MARKP.  */
+
+static inline void
+gimple_set_marked_by_ssa_rab_pass_stmt (gimple stmt, bool markp)
+{
+  stmt->plf = (unsigned) markp;
+}
+/* Modifications for PULP infrastructure */
+
+
 /* Return true if STMT is in a transaction.  */
 
 static inline bool

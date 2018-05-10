@@ -1595,6 +1595,16 @@ fpreprocessed
 C ObjC C++ ObjC++
 Treat the input file as already preprocessed.
 
+; Modifications for PULP infrastructure
+fpulp-rab
+C Var(flag_pulp_rab)
+Enable PULP-RAB-specific transformations
+
+fpulp-rab-single-instrumentation
+C Var(flag_safe_single_rab_instrumentation)
+Enable single RAB lookup per offloaded variable
+; Modifications for PULP infrastructure
+
 ftrack-macro-expansion
 C ObjC C++ ObjC++ JoinedOrMissing RejectNegative UInteger
 ; converted into ftrack-macro-expansion=

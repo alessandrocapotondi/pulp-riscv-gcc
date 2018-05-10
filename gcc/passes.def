@@ -101,6 +101,7 @@ along with GCC; see the file COPYING3.  If not see
 	  NEXT_PASS (pass_tail_recursion);
 	  NEXT_PASS (pass_convert_switch);
 	  NEXT_PASS (pass_cleanup_eh);
+	  NEXT_PASS (pass_pulp_rab);
 	  NEXT_PASS (pass_profile);
 	  NEXT_PASS (pass_local_pure_const);
 	  /* Split functions creates parts that are not run through

@@ -1508,6 +1508,7 @@ OBJS = \
 	tree-ssa-coalesce.o \
 	tree-ssa-copy.o \
 	tree-ssa-dce.o \
+	tree-ssa-pulp-rab.o \
 	tree-ssa-dom.o \
 	tree-ssa-dse.o \
 	tree-ssa-forwprop.o \

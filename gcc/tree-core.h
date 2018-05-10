@@ -933,7 +933,11 @@ struct GTY(()) tree_base {
       unsigned user_align : 1;
       unsigned nameless_flag : 1;
       unsigned atomic_flag : 1;
-      unsigned spare0 : 3;
+
+/* Modifications for PULP infrastructure */
+      unsigned needs_rab_instrumentation : 1;
+      unsigned spare0 : 2;
+/* Modifications for PULP infrastructure */
 
       unsigned spare1 : 8;
 

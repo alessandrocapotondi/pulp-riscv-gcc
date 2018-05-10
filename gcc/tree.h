@@ -1937,6 +1937,11 @@ extern machine_mode element_mode (const_tree t);
 /* Nonzero in a type considered atomic as a whole.  */
 #define TYPE_ATOMIC(NODE) (TYPE_CHECK (NODE)->base.u.bits.atomic_flag)
 
+/* Modifications for PULP infrastructure */
+/* Nonzero if a *_DECL is marked for RAB instrumentation during OpenMP lowering.  */
+#define TYPE_TO_INSTRUMENT(NODE) (TYPE_CHECK (NODE)->base.u.bits.needs_rab_instrumentation)
+/* Modifications for PULP infrastructure */
+
 /* Means this type is const-qualified.  */
 #define TYPE_READONLY(NODE) (TYPE_CHECK (NODE)->base.readonly_flag)
 

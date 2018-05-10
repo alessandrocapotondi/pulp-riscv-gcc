@@ -397,6 +397,9 @@ extern gimple_opt_pass *make_pass_build_alias (gcc::context *ctxt);
 extern gimple_opt_pass *make_pass_build_ealias (gcc::context *ctxt);
 extern gimple_opt_pass *make_pass_dominator (gcc::context *ctxt);
 extern gimple_opt_pass *make_pass_dce (gcc::context *ctxt);
+/* Modifications for PULP infrastructure */
+extern gimple_opt_pass *make_pass_pulp_rab (gcc::context *ctxt);
+/* Modifications for PULP infrastructure */
 extern gimple_opt_pass *make_pass_cd_dce (gcc::context *ctxt);
 extern gimple_opt_pass *make_pass_call_cdce (gcc::context *ctxt);
 extern gimple_opt_pass *make_pass_merge_phi (gcc::context *ctxt);
