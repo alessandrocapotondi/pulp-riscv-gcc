@@ -2164,7 +2164,7 @@ gimple_set_has_volatile_ops (gimple *stmt, bool volatilep)
 /* Return true if statement STMT is marked for RAB instrumentation.  */
 
 static inline bool
-gimple_needs_rab_instrumentation_stmt (const_gimple stmt)
+gimple_needs_rab_instrumentation_stmt (const gimple *stmt)
 {
   return stmt->pad;
 }
@@ -2173,13 +2173,13 @@ gimple_needs_rab_instrumentation_stmt (const_gimple stmt)
 /* Set the flag for RAB instrumentation to MARKP.  */
 
 static inline void
-gimple_set_needs_rab_instrumentation_stmt (gimple stmt, bool markp)
+gimple_set_needs_rab_instrumentation_stmt (/*const*/ gimple *stmt, bool markp)
 {
   stmt->pad = (unsigned) markp;
 }
 
 static inline bool
-gimple_marked_by_ssa_rab_pass_stmt (const_gimple stmt)
+gimple_marked_by_ssa_rab_pass_stmt (const gimple *stmt)
 {
   return stmt->plf;
 }
@@ -2188,7 +2188,7 @@ gimple_marked_by_ssa_rab_pass_stmt (const_gimple stmt)
 /* Set the flag for RAB instrumentation to MARKP.  */
 
 static inline void
-gimple_set_marked_by_ssa_rab_pass_stmt (gimple stmt, bool markp)
+gimple_set_marked_by_ssa_rab_pass_stmt (/*const*/ gimple *stmt, bool markp)
 {
   stmt->plf = (unsigned) markp;
 }

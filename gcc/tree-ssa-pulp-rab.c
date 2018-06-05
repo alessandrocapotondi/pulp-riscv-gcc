@@ -292,9 +292,12 @@ build_fndecl (const char *name, tree type)
   return decl;
 }
 
+/* Helper function for update_gimple_call and update_call_from_tree.
+   A GIMPLE_CALL STMT is being replaced with GIMPLE_CALL NEW_STMT.  */
+
 static void
-finish_update_gimple_call (gimple_stmt_iterator *si_p, gimple new_stmt,
-			   gimple stmt)
+finish_update_gimple_call (gimple_stmt_iterator *si_p, gimple *new_stmt,
+         gimple *stmt)
 {
 //   gimple_call_set_lhs (new_stmt, gimple_call_lhs (stmt));
   move_ssa_defining_stmt_for_defs (new_stmt, stmt);
@@ -307,7 +310,7 @@ finish_update_gimple_call (gimple_stmt_iterator *si_p, gimple new_stmt,
 }
 
 static void
-emit_trywrite_call (tree ref, gimple stmt)
+emit_trywrite_call (tree ref, gimple *stmt)
 {
 //   tree rhs = gimple_assign_rhs1 (stmt);
 // //   gimple call = gimple_build_call (builtin_decl_explicit (BUILT_IN_GOMP_PULP_RAB_TRYWRITE),
@@ -338,7 +341,7 @@ emit_trywrite_call (tree ref, gimple stmt)
   tree ftype = build_function_type_list (void_type_node, unsigned_type_node, 
 					 stmt_write_type, NULL_TREE);
 
-  gimple call = gimple_build_call (build_fndecl (fname, ftype),
+  gimple *call = gimple_build_call (build_fndecl (fname, ftype),
 				   2, ref, rhs);
   
   gimple_stmt_iterator gsi = gsi_for_stmt (stmt);
@@ -349,7 +352,7 @@ emit_trywrite_call (tree ref, gimple stmt)
 
 
 static void
-emit_tryread_call (tree ref, gimple stmt)
+emit_tryread_call (tree ref, gimple *stmt)
 {
 #ifndef BLOCKING_TRYREAD
 
@@ -429,7 +432,7 @@ emit_tryread_call (tree ref, gimple stmt)
 
   tree ftype = build_function_type_list (stmt_read_type, unsigned_type_node, 
 					 NULL_TREE);
-  gimple call = gimple_build_call (build_fndecl (fname, ftype),
+  gimple *call = gimple_build_call (build_fndecl (fname, ftype),
 				   1, ref);//fold_convert (unsigned_type_node, ref));
 				   
   tree lhs = make_ssa_name (stmt_read_type);
@@ -445,7 +448,7 @@ emit_tryread_call (tree ref, gimple stmt)
   
 #else	/*BLOCKING_TRYREAD */
 
-  gimple call = gimple_build_call (builtin_decl_explicit (BUILT_IN_GOMP_PULP_RAB_TRY_READ),
+  gimple *call = gimple_build_call (builtin_decl_explicit (BUILT_IN_GOMP_PULP_RAB_TRY_READ),
 				   1, ref);
   gimple_stmt_iterator gsi = gsi_for_stmt (stmt);
 //   gsi_insert_after (&gsi, call, GSI_CONTINUE_LINKING);
@@ -520,7 +523,7 @@ propagate_instrumentation (tree ssa_var, bool emit_tryx)
 {
 //  use_operand_p use_p;
   imm_use_iterator iter;
-  gimple stmt;
+  gimple *stmt;
   tree ref;
   bool is_trywrite = false;
 
@@ -626,7 +629,7 @@ pulp_instrument_rab_accesses ()
 {
   basic_block bb;
   gimple_stmt_iterator gsi;
-  gimple stmt;
+  gimple *stmt;
 
   FOR_EACH_BB_FN (bb, cfun)
   {

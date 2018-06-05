@@ -219,11 +219,11 @@ pulp_mark_stmts_for_instrumentation (gimple_stmt_iterator *gsi_p, tree var)
   for (gsi = *gsi_p; gsi.ptr != NULL; gsi_prev (&gsi))
   {
     tree rhs, mref, pdecl;
-    gimple stmt = gsi_stmt (gsi);
+    gimple *stmt = gsi_stmt (gsi);
     
     if (gimple_code (stmt) != GIMPLE_ASSIGN)
       continue;
-    
+    ;
     /* This should be *omp_data_i->var - A COMPONENT_REF */
     rhs = gimple_op (stmt, 1);
     if (TREE_CODE (rhs) != COMPONENT_REF)
